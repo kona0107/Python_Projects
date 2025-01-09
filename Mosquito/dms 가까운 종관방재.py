@@ -3,7 +3,7 @@ from qgis.core import (
     QgsProject, QgsSpatialIndex, QgsFeature, QgsDistanceArea, QgsGeometry
 )
 
-# 레이어로드
+# 레이어 로드
 dms_layer = QgsProject.instance().mapLayersByName('dms지점')[0]
 jonggwan_layer = QgsProject.instance().mapLayersByName('종관방재')[0]
 
