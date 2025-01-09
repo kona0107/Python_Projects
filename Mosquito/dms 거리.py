@@ -23,7 +23,7 @@ spatial_index = QgsSpatialIndex()
 for feature, _ in all_features:
     spatial_index.addFeature(feature)
 
-# 결과 저장
+# 결과저장
 results = []
 
 for dms_feature in dms_layer.getFeatures():
