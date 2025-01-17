@@ -164,37 +164,39 @@ def process_and_fill_gaps(aggregated_data):
         # 결측치가 있는 항목을 2순위 데이터로 보완
         for col in ['temp_avg', 'temp_max', 'temp_min', 'rain_sum', 'humidity_avg', 'wdspeed_avg']:
             if col in merged.columns:
-                before_fill = merged[col].isna().sum()
-                merged[col] = merged[col].combine_first(second_priority[col])
-                after_fill = merged[col].isna().sum()
-                print(f"{dms_code}: {col} - 결측치 {before_fill}개 중 {before_fill - after_fill}개 보완 완료.")
-                merged.loc[merged[col].notna() & first_priority[col].isna(), 'remark'] = f'2순위 보완-{col}'
+                # 2순위 보완
+                if merged[col].isna().any():
+                    before_fill = merged[col].isna().sum()
+                    if col in second_priority.columns:  # Check if the column exists in second_priority
+                        merged[col] = merged[col].combine_first(second_priority[col])
+                        after_fill = merged[col].isna().sum()
+                        print(f"{dms_code}: {col} - 2순위 보완: 결측치 {before_fill}개 중 {before_fill - after_fill}개 보완 완료.")
+                        merged.loc[merged[col].notna() & first_priority[col].isna(), 'remark'] = f'2순위 보완-{col}'
 
-        # 3순위 보완 - 다른 년도의 같은 날짜 1순위 평균값으로 채우기
-        for col in ['temp_avg', 'temp_max', 'temp_min', 'rain_sum', 'humidity_avg', 'wdspeed_avg']:
-            if col in merged.columns:
-                missing_dates = merged[merged[col].isna()].index
-                for date in missing_dates:
-                    # 다른 년도의 같은 날짜 값들의 평균을 계산 (1순위 기준)
-                    same_day_data = aggregated_data[
-                        (aggregated_data['adjusted_date'].dt.month == date.month) &
-                        (aggregated_data['adjusted_date'].dt.day == date.day) &
-                        (aggregated_data['dms_code'] == dms_code) &
-                        (aggregated_data['remark'] == '1순위')
-                    ]
-                    avg_value = same_day_data[col].mean()
-                    if not np.isnan(avg_value):
-                        merged.at[date, col] = avg_value
-                        merged.at[date, 'remark'] = f'3순위 보완-{col}'
 
-        # 4순위 보완 - 선형 보간법으로 결측치 보완
-        for col in ['temp_avg', 'temp_max', 'temp_min', 'rain_sum', 'humidity_avg', 'wdspeed_avg']:
-            if col in merged.columns:
-                before_fill = merged[col].isna().sum()
-                merged[col] = merged[col].interpolate(method='linear')
-                after_fill = merged[col].isna().sum()
-                print(f"{dms_code}: {col} - 4순위 보완 (선형 보간법): 결측치 {before_fill}개 중 {before_fill - after_fill}개 보완 완료.")
-                merged.loc[merged[col].notna() & first_priority[col].isna(), 'remark'] = f'4순위 보완-{col}'
+                # 3순위 보완 - 다른 년도의 같은 날짜 1순위 평균값으로 채우기
+                if merged[col].isna().any():
+                    missing_dates = merged[merged[col].isna()].index
+                    for date in missing_dates:
+                            # 다른 년도의 같은 날짜 값들의 평균을 계산 (1순위 기준)
+                            same_day_data = aggregated_data[
+                                (aggregated_data['adjusted_date'].dt.month == date.month) &
+                                (aggregated_data['adjusted_date'].dt.day == date.day) &
+                                (aggregated_data['dms_code'] == dms_code) &
+                                (aggregated_data['remark'] == '1순위')
+                            ]
+                            avg_value = same_day_data[col].mean()
+                            if not np.isnan(avg_value):
+                                merged.at[date, col] = avg_value
+                                merged.at[date, 'remark'] = f'3순위 보완-{col}'
+
+                # 4순위 보완 - 선형 보간법으로 결측치 보완
+                if merged[col].isna().any():
+                    before_fill = merged[col].isna().sum()
+                    merged[col] = merged[col].interpolate(method='linear')
+                    after_fill = merged[col].isna().sum()
+                    print(f"{dms_code}: {col} - 4순위 보완 (선형 보간법): 결측치 {before_fill}개 중 {before_fill - after_fill}개 보완 완료.")
+                    merged.loc[merged[col].notna() & first_priority[col].isna(), 'remark'] = f'4순위 보완-{col}'
 
         result.append(merged.reset_index())
 
@@ -223,7 +225,7 @@ if __name__ == "__main__":
  # , 2016, 2017, 2018, 2019, 2020, 2021, 2022
     for year in years:
         start_date = datetime(year, 3, 31, 19, 0)
-        end_date = datetime(year, 4, 1, 5, 0)
+        end_date = datetime(year, 4, 1, 5, 0) # (year, 10, 31, 5, 0)
 
         raw_data = fetch_data_for_month(start_date, end_date)
         processed_data = main_process(raw_data)
@@ -235,9 +237,9 @@ if __name__ == "__main__":
 
     # 모든 년도 데이터를 하나로 합친 후 저장
     final_data = pd.concat(all_processed_data, ignore_index=True)
-    colname = ['날짜', 'DMS_CODE', '비고', '평균 온도', '최고 온도','최저 온도', '강수량 합계', '평균 습도',  '월평균 기온', '연평균 기온', '평균 풍속']
+    colname = ['날짜', 'DMS_CODE', '비고', '평균 온도', '최고 온도','최저 온도', '강수량 합계', '평균 습도', '평균 풍속', '월평균 기온', '연평균 기온']
     final_data.columns = colname
     # 열 순서 재정렬
     final_data = final_data[['날짜', 'DMS_CODE', '평균 온도', '최고 온도', '최저 온도', '강수량 합계', '평균 습도', '평균 풍속', '월평균 기온', '연평균 기온', '비고']]
-    final_data.to_excel("F:\박정현\ML\Mosquito\sampel0401_mosquito_average.xlsx", index=False)
+    final_data.to_excel("F:\박정현\ML\Mosquito\sample5_mosquito_average.xlsx", index=False)
     print("All data processing complete. Saved to 'processed_weather_data_2022_years_with_averages.xlsx'.")
