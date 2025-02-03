@@ -13,6 +13,9 @@ dms_station_mapping = {}
 
 for _, row in df.iterrows():
     dms_code = row['DMS CODE']
+
+
+    
     dms_name = row['DMS 관측소명']
     first_priority = row['1순위 관측소 코드']
     second_priority = row['2순위 관측소 코드']
