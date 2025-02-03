@@ -8,7 +8,7 @@ import time
 file_path = r'/home/seunjung1216/매개모기/DMS_관측소_매핑.xlsx'
 df = pd.read_excel(file_path)
 
-# DMS CODE와 기상 관측소 코드 매핑 생성
+# DMS CODE와 기상 관측소 코드 매핑 생성.
 dms_station_mapping = {}
 
 for _, row in df.iterrows():
