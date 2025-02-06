@@ -33,37 +33,36 @@ n_iter_count = 100
 region = "1"
 
 # 실행할 모델을 선택하는 리스트 ['lgbm', 'rf', 'gb', 'xgb']
-MODELS_TO_RUN = ['lgbm', 'rf', 'gb', 'xgb']
+MODELS_TO_RUN = ['rf', 'gb']
 
 # 하이퍼파라미터 조정
-
 HYPERPARAMS = {
     "lgbm": {
-        'n_estimators': (400, 600, 10),
-        'max_depth': (10, 60, 5),
-        'learning_rate': (0.01, 0.05),
-        'num_leaves': (20, 80, 5),
-        'min_child_samples': (3, 25, 2)
-    },
-    "rf": {
-        'n_estimators': (300, 700, 10),
-        'max_depth': (10, 60, 5),
-        'min_samples_split': (3, 15, 2),
-        'min_samples_leaf': (1, 10, 1)
-    },
-    "gb": {
-        'n_estimators': (400, 600, 10),
-        'max_depth': (4, 20, 2),
-        'min_samples_split': (3, 15, 2),
-        'min_samples_leaf': (1, 10, 1),
-        'learning_rate': (0.01, 0.05)
+        'n_estimators': (400, 700, 20),  # 탐색 범위 확장
+        'max_depth': (5, 40, 5),  # 깊이 제한으로 과적합 방지
+        'learning_rate': (0.005, 0.05),  # 세밀한 튜닝
+        'num_leaves': (15, 50, 5),  # 너무 깊은 트리 방지
+        'min_child_samples': (10, 30, 2)  # 최소 샘플 개수 증가
     },
     "xgb": {
-        'n_estimators': (300, 600, 10),
-        'max_depth': (4, 20, 2),
-        'learning_rate': (0.01, 0.05),
-        'subsample': (0.6, 0.9),
-        'colsample_bytree': (0.5, 0.9)
+        'n_estimators': (300, 700, 10),  # 더 많은 탐색
+        'max_depth': (3, 15, 2),  # 깊이 제한으로 과적합 방지
+        'learning_rate': (0.005, 0.04),  # 세밀한 튜닝
+        'subsample': (0.5, 0.85),  # 과적합 방지
+        'colsample_bytree': (0.4, 0.8)  # feature 사용 개수 제한
+    },
+    "rf": {
+        'n_estimators': (300, 500, 10),  # 트리 개수를 줄여 속도 향상
+        'max_depth': (10, 60, 5),  # 너무 깊은 트리 방지
+        'min_samples_split': (3, 15, 2),  # 최소 분할 샘플 증가
+        'min_samples_leaf': (1, 10, 1),  # 리프 노드 최소 샘플 증가
+    },
+    "gb": {
+        'n_estimators': (300, 500, 10),  # 트리 개수를 500개 이하로 줄이면서 최적 성능 확보
+        'max_depth': (4, 20, 2),  # 깊이를 제한하여 과적합 방지
+        'min_samples_split': (3, 15, 2),  # 너무 작은 샘플로 분할하지 않도록 설정
+        'min_samples_leaf': (1, 10, 1),  # 리프 노드 최소 샘플 개수 제한
+        'learning_rate': (0.01, 0.05),  # 안정적인 학습률
+        'subsample': (0.7, 0.9)  # 일부 데이터만 사용하여 속도 향상
     }
 }
-
