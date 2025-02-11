@@ -24,7 +24,7 @@ TEST_YEAR = 2024
 MOSQUITO_PATH = r"F:/박정현/ML/machine_learning_project/data/mosquito"
 
 # 경관요소 선택(0(전체), 1, 2, 3)
-landscape = 1
+landscape = 0
 
 save_path = r'F:/박정현/ML/machine_learning_project/models'
 
@@ -33,8 +33,7 @@ n_iter_count = 100
 region = "1"
 
 # 실행할 모델을 선택하는 리스트 ['lgbm', 'rf', 'gb', 'xgb']
-MODELS_TO_RUN = ['rf', 'gb']
-
+MODELS_TO_RUN = ['lgbm', 'rf', 'gb', 'xgb']
 # 하이퍼파라미터 조정
 HYPERPARAMS = {
     "lgbm": {
@@ -52,10 +51,10 @@ HYPERPARAMS = {
         'colsample_bytree': (0.4, 0.8)  # feature 사용 개수 제한
     },
     "rf": {
-        'n_estimators': (300, 500, 10),  # 트리 개수를 줄여 속도 향상
-        'max_depth': (10, 60, 5),  # 너무 깊은 트리 방지
-        'min_samples_split': (3, 15, 2),  # 최소 분할 샘플 증가
-        'min_samples_leaf': (1, 10, 1),  # 리프 노드 최소 샘플 증가
+        'n_estimators': (300, 500, 10),  # 트리 개수 유지
+        'max_depth': (30, 50, 5),  # 최적값 35 기준으로 범위 좁힘
+        'min_samples_split': (5, 10, 1),  # 최적값 6 기준으로 미세 조정
+        'min_samples_leaf': (5, 10, 1)  # 최적값 8 기준으로 조정
     },
     "gb": {
         'n_estimators': (300, 500, 10),  # 트리 개수를 500개 이하로 줄이면서 최적 성능 확보

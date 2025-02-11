@@ -14,6 +14,7 @@ from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 import hyperopt.hp as hp 
+import matplotlib.pyplot as plt
 
 
 def get_param_space(model_name):
@@ -22,17 +23,17 @@ def get_param_space(model_name):
     
     param_space = {}
     for key, value in param_ranges.items():
-        if len(value) == 3:  # quniform
+        if len(value) == 3:  # quniform (정수형)
             param_space[key] = hp.quniform(key, *value)
-        elif len(value) == 2:  # loguniform (learning_rate 같은 경우)
-            param_space[key] = hp.loguniform(key, np.log(max(value[0], 1e-3)), np.log(value[1]))
+        elif len(value) == 2:  # loguniform (학습률 등)
+            param_space[key] = hp.uniform(key, value[0], value[1])  # loguniform 대신 uniform 사용
     
     return param_space
+
 
 def train_model(model_cls, param_space, n_iter_count, save_path, region, model_name, 
                 X_train_scaled, X_test_scaled, y_train, y_test, train_data_sorted, 
                 test_data_sorted, landscape):
-    
     # 🔹 각 프로세스에서 랜덤 시드 고정 (재현성 보장)
     np.random.seed(42)
     random.seed(42)
@@ -43,9 +44,9 @@ def train_model(model_cls, param_space, n_iter_count, save_path, region, model_n
             if key in params:
                 params[key] = int(params[key])
 
-        model = model_cls(**params, random_state=42)  # ✅ 모든 CPU 사용
+        model = model_cls(**params, random_state=42)  
 
-        # ✅ TimeSeriesSplit 적용 (3개 분할 사용)
+        # TimeSeriesSplit 적용 (3개 분할 사용)
         tscv = TimeSeriesSplit(n_splits=3)
         rmse_scores = []
 
@@ -63,7 +64,8 @@ def train_model(model_cls, param_space, n_iter_count, save_path, region, model_n
     log_filename = f"{model_name}_training.log"
     log_filepath = os.path.join(save_path, log_filename)
 
-    original_stdout = sys.stdout  
+    original_stdout = sys.stdout
+
     try:
         os.makedirs(save_path, exist_ok=True)  
         sys.stdout = open(log_filepath, 'w', encoding="utf-8")
@@ -73,22 +75,13 @@ def train_model(model_cls, param_space, n_iter_count, save_path, region, model_n
         best_params = fmin(fn=objective, space=param_space, algo=tpe.suggest, 
                            max_evals=n_iter_count, trials=trials, rstate=rstate)  # 🔥 hyperopt 시드 고정
 
-        # 🔥 최적 파라미터 변환 추가
+        # 🔥 최적 파라미터 변환 추가(float으로 반환돼서 파라미터가 0으로 간주되는 것 방지)
         for key in ['n_estimators', 'max_depth', 'min_samples_split', 'min_samples_leaf', 'num_leaves', 'min_child_samples']:
             if key in best_params:
                 best_params[key] = int(best_params[key])
 
         best_model = model_cls(**best_params, random_state=42)  
-        if model_name in ["xgb", "lgbm"]:
-            best_model.fit(
-                X_train_scaled, y_train,
-                eval_set=[(X_test_scaled, y_test)],
-                early_stopping_rounds=50,  # ✅ 성능 개선이 없으면 학습 중단
-                verbose=100
-            )
-        else:
-            best_model.fit(X_train_scaled, y_train)  # ❌ eval_set 없이 학습
-
+        best_model.fit(X_train_scaled, y_train)  # ✅ eval_set 없이 학습
 
         joblib.dump(best_model, os.path.join(save_path, f"{model_name}.pkl"))
 
@@ -104,12 +97,17 @@ def train_model(model_cls, param_space, n_iter_count, save_path, region, model_n
         print(f"✅ {model_name} RMSE (Train): {train_rmse:.4f}, RMSE (Test): {test_rmse:.4f}")
         print(f"✅ {model_name} R² (Train): {train_r2:.4f}, R² (Test): {test_r2:.4f}")
 
+        load_and_predict(save_path, model_name, X_test_scaled, train_data_sorted, test_data_sorted, best_params, train_rmse, test_rmse, train_r2, test_r2, landscape, n_iter_count)
+
+        print("🎯 {model_name} 예측 및 시각화 완료")
+
     finally:
-        sys.stdout.flush()  # ✅ 로그 유실 방지
+        sys.stdout.flush()  # 로그 유실 방지
         sys.stdout.close()
         sys.stdout = original_stdout  
 
-    return best_model
+    return best_model, best_params, train_r2, test_r2, train_rmse, test_rmse, model_name
+
 
 
 def run_models(n_iter_count, save_path, region, X_train_scaled, X_test_scaled, y_train, y_test, train_data_sorted, test_data_sorted, landscape):
@@ -119,52 +117,57 @@ def run_models(n_iter_count, save_path, region, X_train_scaled, X_test_scaled, y
         'gb': (GradientBoostingRegressor, get_param_space('gb')),
         'xgb': (XGBRegressor, get_param_space('xgb'))
     }
-    
+
     models_to_run = {name: (cls, space) for name, (cls, space) in models.items() if name in config.MODELS_TO_RUN}
     max_cores = multiprocessing.cpu_count()
-    optimal_cores = max(2, max_cores - 2)  # ✅ 최소 2개 코어 유지
+    optimal_cores = max(max_cores - 2, 1)  # 최소 1개 코어 유지
 
     pool = multiprocessing.Pool(processes=optimal_cores)
     results = {}
-    async_results = []
+
+    def log_result(model_result):
+        """ 모델 학습 완료 후 즉시 결과를 출력하는 함수 """
+        if isinstance(model_result, tuple) and len(model_result) == 7:
+            model_name = model_result[-1]  # ✅ 튜플의 마지막 값이 모델 이름
+            results[model_name] = model_result
+            print(f"✅ {model_name} 모델 학습 완료: {model_result[:3]}...")  # ✅ 일부만 출력하여 가독성 유지
+        else:
+            print(f"⚠️ 결과 형식이 예상과 다릅니다: {model_result}")
 
     for name, (cls, space) in models_to_run.items():
-        async_result = pool.apply_async(
+        pool.apply_async(
             train_model, 
-            args=(cls, space, n_iter_count, save_path, region, name, X_train_scaled, X_test_scaled, y_train, y_test, train_data_sorted, test_data_sorted, landscape)
+            args=(cls, space, n_iter_count, save_path, region, name, X_train_scaled, X_test_scaled, y_train, y_test, train_data_sorted, test_data_sorted, landscape),
+            callback=log_result  # ✅ 모델 학습 완료 시 바로 결과 출력
         )
-        async_results.append((name, async_result))
 
     pool.close()
     pool.join()
 
-    for name, async_result in async_results:
-        results[name] = async_result.get()
-
     return results
+
 
 
 def get_unique_filename(directory, base_name, landscape, extension="png"):
     """
     주어진 디렉토리에서 base_name과 landscape를 포함한 파일명을 찾아
-    가장 큰 숫자 다음 숫자로 파일명 생성
+    가장 큰 숫자 다음 숫자로 파일명 생성 (오류 방지)
     """
-    if not os.path.exists(directory):  # 디렉토리 존재 여부 확인 후 생성
+    if not os.path.exists(directory):  # 디렉토리가 없으면 생성
         os.makedirs(directory, exist_ok=True)
 
     filename_prefix = f"{base_name}_landscape{landscape}_"
     existing_files = [f for f in os.listdir(directory) if f.startswith(filename_prefix) and f.endswith(f".{extension}")]
 
-    # 정규 표현식을 사용하여 파일명에서 숫자 추출 (안정성 개선)
     numbers = []
     pattern = re.compile(rf"{re.escape(filename_prefix)}(\d+)\.{extension}")
-    
+
     for f in existing_files:
         match = pattern.match(f)
         if match:
             numbers.append(int(match.group(1)))
 
-    next_number = max(numbers) + 1 if numbers else 1  # 숫자 없을 경우 기본값 1
+    next_number = max(numbers) + 1 if numbers else 1  # 기존 파일이 없으면 `1`부터 시작
 
     return os.path.join(directory, f"{filename_prefix}{next_number}.{extension}")
 
@@ -188,21 +191,23 @@ def load_and_predict(save_path, model_name, X_test_scaled, train_data_sorted, te
     model = joblib.load(os.path.join(save_path, f"{model_name}.pkl"))
     y_test_pred = model.predict(X_test_scaled)
     
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(16, 8))
     plt.plot(test_data_sorted['DATE'], test_data_sorted['mosquito'], label='Actual', color='black')
     plt.plot(test_data_sorted['DATE'], y_test_pred, label='Prediction', color=model_color)
     plt.legend()
+    plt.xlabel("Date", fontsize=12)  # x축 폰트 크기 설정
+    plt.ylabel("Mosquito Count", fontsize=12)  # y축 폰트 크기 설정
     plt.xlabel("Date")
     plt.ylabel("Mosquito Count")
-    plt.title(f"{full_model_name} Prediction", fontsize=25)
+    plt.title(f"{full_model_name} ", fontsize=25)
     plt.grid()
     
-    textstr = f"RMSE (Train): {train_rmse:.4f}  RMSE (Test): {test_rmse:.4f}\nR² (Train): {train_r2:.4f}  R² (Test): {test_r2:.4f}\nLandscape: {landscape}  n_iter_count: {n_iter_count}"
-    plt.figtext(0.5, 0.08, textstr, fontsize=14, ha='center', va='center')
+    textstr = f"R² (Train): {train_r2:.4f}  RMSE (Train): {train_rmse:.4f}\nR² (Test): {test_r2:.4f}  RMSE (Test): {test_rmse:.4f}\nLandscape: {landscape}  Trial: {n_iter_count}"
+    plt.figtext(0.5, 0.08, textstr, fontsize=10, ha='center', va='center')
     plt.subplots_adjust(bottom=0.25)
     
     os.makedirs(save_path, exist_ok=True)
-    unique_filename = get_unique_filename(save_path, model_name, landscape, "png")  # ✅ 파일명 자동 증가
+    unique_filename = get_unique_filename(save_path, model_name, landscape, "png")  # 파일명 자동 증가
     plt.savefig(unique_filename)
     print(f"✅ 그래프 저장 완료: {unique_filename}")
 
