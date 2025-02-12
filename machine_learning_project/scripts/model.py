@@ -15,6 +15,7 @@ from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 import hyperopt.hp as hp 
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 
 def get_param_space(model_name):
@@ -81,7 +82,8 @@ def train_model(model_cls, param_space, n_iter_count, save_path, region, model_n
                 best_params[key] = int(best_params[key])
 
         best_model = model_cls(**best_params, random_state=42)  
-        best_model.fit(X_train_scaled, y_train)  # ✅ eval_set 없이 학습
+        best_model.fit(X_train_scaled, y_train)  
+        print(X_train_scaled.columns)
 
         joblib.dump(best_model, os.path.join(save_path, f"{model_name}.pkl"))
 
@@ -128,9 +130,9 @@ def run_models(n_iter_count, save_path, region, X_train_scaled, X_test_scaled, y
     def log_result(model_result):
         """ 모델 학습 완료 후 즉시 결과를 출력하는 함수 """
         if isinstance(model_result, tuple) and len(model_result) == 7:
-            model_name = model_result[-1]  # ✅ 튜플의 마지막 값이 모델 이름
+            model_name = model_result[-1]  # 튜플의 마지막 값이 모델 이름
             results[model_name] = model_result
-            print(f"✅ {model_name} 모델 학습 완료: {model_result[:3]}...")  # ✅ 일부만 출력하여 가독성 유지
+            print(f"✅ {model_name} 모델 학습 완료: {model_result[:3]}...")  # 일부만 출력하여 가독성 유지
         else:
             print(f"⚠️ 결과 형식이 예상과 다릅니다: {model_result}")
 
@@ -148,33 +150,33 @@ def run_models(n_iter_count, save_path, region, X_train_scaled, X_test_scaled, y
 
 
 
-def get_unique_filename(directory, base_name, landscape, extension="png"):
+def get_unique_filename(directory, base_name, extension="png"):
     """
-    주어진 디렉토리에서 base_name과 landscape를 포함한 파일명을 찾아
-    가장 큰 숫자 다음 숫자로 파일명 생성 (오류 방지)
+    저장된 그래프 파일명이 중복되지 않도록 자동 번호를 매김.
+    예: {model_name}_mean_weather_Ld{landscape}_1.png, _2.png, _3.png ...
     """
-    if not os.path.exists(directory):  # 디렉토리가 없으면 생성
+    if not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
 
-    filename_prefix = f"{base_name}_landscape{landscape}_"
-    existing_files = [f for f in os.listdir(directory) if f.startswith(filename_prefix) and f.endswith(f".{extension}")]
-
+    existing_files = [f for f in os.listdir(directory) if f.startswith(base_name) and f.endswith(f".{extension}")]
+    
+    # 기존 파일에서 숫자 찾기
     numbers = []
-    pattern = re.compile(rf"{re.escape(filename_prefix)}(\d+)\.{extension}")
-
     for f in existing_files:
-        match = pattern.match(f)
-        if match:
-            numbers.append(int(match.group(1)))
+        parts = f.split("_")
+        num_part = parts[-1].split(".")[0]  # 확장자 앞 숫자 추출
+        if num_part.isdigit():
+            numbers.append(int(num_part))
 
-    next_number = max(numbers) + 1 if numbers else 1  # 기존 파일이 없으면 `1`부터 시작
+    next_number = max(numbers) + 1 if numbers else 1  # 기존 숫자 중 가장 큰 값 +1, 없으면 1
 
-    return os.path.join(directory, f"{filename_prefix}{next_number}.{extension}")
+    return os.path.join(directory, f"{base_name}_{next_number}.{extension}")
 
-
-def load_and_predict(save_path, model_name, X_test_scaled, train_data_sorted, test_data_sorted, best_params, train_rmse, test_rmse, train_r2, test_r2, landscape, n_iter_count):
+def load_and_predict(save_path, model_name, X_test_scaled, train_data_sorted, test_data_sorted, 
+                     best_params, train_rmse, test_rmse, train_r2, test_r2, landscape, n_iter_count):
+    
     model_full_names = {
-        "lgbm": "LightGBM",
+        "lgbm": "Light Gradient Boosting",
         "xgb": "Extreme Gradient Boosting",
         "rf": "Random Forest",
         "gb": "Gradient Boosting"
@@ -185,31 +187,69 @@ def load_and_predict(save_path, model_name, X_test_scaled, train_data_sorted, te
         "rf": "blue",
         "gb": "orange"
     }
-    
-    full_model_name = model_full_names.get(model_name, model_name)
-    model_color = model_colors.get(model_name, "red")
+
+    # 기존 model.py 방식대로 모델 불러오기
     model = joblib.load(os.path.join(save_path, f"{model_name}.pkl"))
-    y_test_pred = model.predict(X_test_scaled)
-    
+    test_data_sorted["Prediction"] = model.predict(X_test_scaled)
+
+    # (월, 일) 단위 평균 데이터 계산
+    test_data_sorted["Month"] = test_data_sorted["DATE"].dt.month
+    test_data_sorted["Day"] = test_data_sorted["DATE"].dt.day
+
+    # 실제 모기 개체 수 (Observation) 평균 계산
+    test_data_avg = test_data_sorted.groupby(["Month", "Day"])["mosquito"].mean().reset_index()
+    test_data_avg["Date"] = pd.to_datetime(test_data_avg[["Month", "Day"]].assign(Year=2024))
+    test_data_avg.set_index("Date", inplace=True)
+
+    # 모델별 예측값 평균 계산
+    y_pred_avg = test_data_sorted.groupby(["Month", "Day"])["Prediction"].mean().reset_index()
+    y_pred_avg["Date"] = pd.to_datetime(y_pred_avg[["Month", "Day"]].assign(Year=2024))
+    y_pred_avg.set_index("Date", inplace=True)
+
+    print(f"📌 {model_name} 평균 예측 데이터 생성 완료")
+
+    # 평균 그래프 출력 및 저장
     plt.figure(figsize=(16, 8))
-    plt.plot(test_data_sorted['DATE'], test_data_sorted['mosquito'], label='Actual', color='black')
-    plt.plot(test_data_sorted['DATE'], y_test_pred, label='Prediction', color=model_color)
-    plt.legend()
-    plt.xlabel("Date", fontsize=12)  # x축 폰트 크기 설정
-    plt.ylabel("Mosquito Count", fontsize=12)  # y축 폰트 크기 설정
-    plt.xlabel("Date")
-    plt.ylabel("Mosquito Count")
-    plt.title(f"{full_model_name} ", fontsize=25)
-    plt.grid()
-    
-    textstr = f"R² (Train): {train_r2:.4f}  RMSE (Train): {train_rmse:.4f}\nR² (Test): {test_r2:.4f}  RMSE (Test): {test_rmse:.4f}\nLandscape: {landscape}  Trial: {n_iter_count}"
-    plt.figtext(0.5, 0.08, textstr, fontsize=10, ha='center', va='center')
-    plt.subplots_adjust(bottom=0.25)
-    
-    os.makedirs(save_path, exist_ok=True)
-    unique_filename = get_unique_filename(save_path, model_name, landscape, "png")  # 파일명 자동 증가
-    plt.savefig(unique_filename)
-    print(f"✅ 그래프 저장 완료: {unique_filename}")
+    # 실제 모기 개체 수 평균값 (회색, 선 두께 증가)
+    plt.plot(test_data_avg.index, test_data_avg['mosquito'], label="Observation",
+             color="grey", marker='o', markersize=7, linewidth=2)
+    # 예측값 평균 (선택한 모델의 색상 적용)
+    plt.plot(y_pred_avg.index, y_pred_avg['Prediction'], 
+             label="Prediction", color=model_colors[model_name], marker='o', markersize=7, linewidth=2)
+    # X축 포맷 설정 (월-일)
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%y-%m'))
+    plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+    # y축 회색 세로줄 제거 (x축만 그리드 유지)
+    plt.grid(axis='x')
+    # 폰트 크기 설정
+    # plt.xticks(fontsize=15)
+    # plt.yticks(fontsize=15)
+    # y축 범위 자동 조정 (최대값이 100 이하이면 0~100으로 설정, 초과하면 자동 조정)
+    max_value = max(test_data_avg['mosquito'].max(), y_pred_avg[model_name]['Prediction'].max())
+    if max_value > 100:
+        plt.ylim(None)  # 자동 조정
+    else:
+        plt.ylim(0, 100)  # 기본값 설정
+    # 제목 수정: 선택한 모델의 풀네임이 나오도록 변경
+    plt.title(f"{model_full_names[model_name]}", fontsize=25)
+    # 범례 왼쪽 상단으로 이동
+    plt.legend(fontsize=17, loc='upper left')
+    # R² 및 RMSE 정보 텍스트 박스
+    textstr = (f"R² (Train): {train_r2:.4f}  RMSE (Train): {train_rmse:.4f}\n"
+               f"R² (Test): {test_r2:.4f}  RMSE (Test): {test_rmse:.4f}\n"
+               f"Trial: {n_iter_count}  Landscape: {landscape}")
+
+    plt.figtext(0.753, 0.853, textstr, fontsize=15, ha='center', va='top',
+                bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round,pad=0.5'))
+
+    #  기존 방식대로 그래프 저장하되, 자동 번호 부여
+    base_filename = f"{model_name}_mean_weather_Ld{landscape}"
+    unique_file_path = get_unique_filename(save_path, base_filename, "png")
+
+    # 그래프 저장
+    plt.savefig(save_path, dpi=300,bbox_inches='tight')
+    print(f"📁 그래프 저장 완료: {unique_file_path}")
+
 
 
 ## tasklist | findstr python

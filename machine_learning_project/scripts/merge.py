@@ -27,6 +27,7 @@ def merge_data(weather):
     merge.dropna(inplace=True)
     data = data[data['측정일'] != '합계']
     data = data.iloc[:, [0, 3, 5]]
+
     mosquito = data.groupby(['측정일', '측정소명'], as_index= False).sum()
     weather['측정일'] = pd.to_datetime(weather['측정일'])
     mosquito['측정일'] = pd.to_datetime(mosquito['측정일'], errors='coerce')
@@ -34,7 +35,8 @@ def merge_data(weather):
     last.drop('remark', axis =1, inplace= True)
     last.dropna(inplace=True)
     last = last.rename(columns= {"측정일" : "DATE", "측정소명" : "std_name", "모기" : "mosquito", '경관요소' : 'landscape'})
-    last.to_excel(config.BASE_DIR +"/machine_learning_project/data/weather/2015_2023_total.xlsx", index=False)
+    
+    last.to_excel(config.BASE_DIR +"/machine_learning_project/data/weather/2015_2024_total.xlsx", index=False)
     
     return last
     

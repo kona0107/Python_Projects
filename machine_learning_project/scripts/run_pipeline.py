@@ -3,6 +3,8 @@ from merge import *
 from preprocess import *
 from model import *
 import config
+import os
+import subprocess
 
 n_iter_count = config.n_iter_count
 landscape = config.landscape 
@@ -37,8 +39,8 @@ def run_pipeline():
     # 데이터 전처리
     scaler, X_train_scaled, X_test_scaled, y_train, y_test, X_train, train_data_sorted, test_data_sorted = processed_data(data)
     
-    print("✅ 데이터 전처리 완료")
-    print("✅ 모델 학습 시작")
+    print("데이터 전처리 완료")
+    print("모델 학습 시작")
 
     # 모델 학습
     save_path = config.save_path
@@ -54,3 +56,8 @@ def run_pipeline():
 
 if __name__ == "__main__":
     run_pipeline()
+
+# Google Drive 업로드 실행
+    print("Google Drive 업로드를 시작합니다...")
+    subprocess.run(["python", "f:/박정현/ML/machine_learning_project/scripts/google_upload.py"], check=True)
+    print("Google Drive 업로드가 완료되었습니다.")
