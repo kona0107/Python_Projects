@@ -10,6 +10,17 @@ n_iter_count = config.n_iter_count
 landscape = config.landscape 
 
 def run_pipeline():
+    '''
+    run_pipeline()
+    - 데이터 수집-> 병합 -> 전처리
+    └── run_models()
+        ├── train_model()
+        │     ├── 모델 학습 진행
+        │     ├── 최적 하이퍼파라미터 찾기
+        │     ├── 학습된 모델 저장
+        │     └── load_and_predict()  # 학습된 모델로 예측 수행 및 시각화 저장
+        └── 모든 모델 학습 완료 후 run_models() 종료
+    '''
     # 데이터 수집 단계
     fetch_data = config.fetch_data
     
@@ -45,9 +56,9 @@ def run_pipeline():
     # 모델 학습
     save_path = config.save_path
     n_iter_count = config.n_iter_count
-    region = config.region
+    # region = config.region
 
-    results = run_models(n_iter_count, save_path, region, X_train_scaled, X_test_scaled, y_train, y_test, train_data_sorted, test_data_sorted, landscape)
+    results = run_models(n_iter_count, save_path, X_train_scaled, X_test_scaled, y_train, y_test, train_data_sorted, test_data_sorted, landscape)
 
     print("✅ 모델 학습 완료")
     return results
@@ -57,7 +68,9 @@ def run_pipeline():
 if __name__ == "__main__":
     run_pipeline()
 
-# Google Drive 업로드 실행
-    print("Google Drive 업로드를 시작합니다...")
-    subprocess.run(["python", "f:/박정현/ML/machine_learning_project/scripts/google_upload.py"], check=True)
-    print("Google Drive 업로드가 완료되었습니다.")
+# Google Drive 업로드 실행(최종 모델 확정 시 주석 해제하여 드라이브에 업로드! )
+''' 
+   print("Google Drive 업로드를 시작합니다...")
+   subprocess.run(["python", "f:/박정현/ML/machine_learning_project/scripts/google_upload.py"], check=True)
+   print("Google Drive 업로드가 완료되었습니다.")
+'''
